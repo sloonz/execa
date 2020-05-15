@@ -2,6 +2,7 @@
 const path = require('path');
 const childProcess = require('child_process');
 const crossSpawn = require('cross-spawn');
+const stream = require('stream');
 const stripFinalNewline = require('strip-final-newline');
 const npmRunPath = require('npm-run-path');
 const onetime = require('onetime');
@@ -253,4 +254,111 @@ module.exports.node = (scriptPath, args, options = {}) => {
 			shell: false
 		}
 	);
+};
+
+module.exports.duplexStream = (file, args, options) => {
+	const parsed = handleArgs(file, args, options);
+	const command = joinCommand(file, args);
+
+	let spawned;
+	try {
+		spawned = childProcess.spawn(parsed.file, parsed.args, parsed.options);
+	} catch (error) {
+		const err = makeError({
+			error,
+			stdout: undefined,
+			stderr: undefined,
+			all: undefined,
+			command,
+			parsed,
+			timedOut: false,
+			isCanceled: false,
+			killed: false
+		});
+		const duplex = new stream.Duplex();
+		duplex.destroy(err);
+		return mergePromise(duplex, Promise.reject(err));
+	}
+
+	const spawnedPromise = getSpawnedPromise(spawned);
+	const timedPromise = setupTimeout(spawned, parsed.options, spawnedPromise);
+	const processDone = setExitHandler(spawned, parsed.options, timedPromise);
+
+	const context = {isCanceled: false};
+
+	spawned.kill = spawnedKill.bind(null, spawned.kill.bind(spawned));
+	spawned.cancel = spawnedCancel.bind(null, spawned, context);
+
+	crossSpawn._enoent.hookChildProcess(spawned, parsed.parsed);
+
+	const all = makeAllStream(spawned, parsed.options);
+	const stdin = spawned.stdin;
+	const output = !!all ? all : spawned.stdout;
+
+	const duplex = new stream.Duplex({
+		write(chunk, encoding, callback) {
+			stdin.write(chunk, encoding, callback);
+		},
+		final(callback) {
+			stdin.end(callback);
+		},
+		read() {
+			output.resume();
+		},
+		destroy(err, cb) {
+			if(spawned.exitCode === null && spawned.signalCode === null) {
+				spawned.once("exit", () => cb());
+				spawned.once("error", () => cb());
+				spawned.cancel();
+			} else {
+				cb();
+			}
+		},
+	});
+
+	stdin.once("error", err => duplex.destroy(err));
+	output.once("error", err => duplex.destroy(err));
+	output.once("end", () => duplex.push(null));
+	output.on("data", chunk => {
+		if(!duplex.push(chunk)) {
+			output.pause();
+		}
+	});
+
+	const handlePromise = onetime(async () => {
+		const { error, exitCode, signal, timedOut } = await processDone;
+
+		if (error || exitCode !== 0 || signal !== null) {
+			const returnedError = makeError({
+				error,
+				exitCode,
+				signal,
+				stdout: undefined,
+				stderr: undefined,
+				all: undefined,
+				command,
+				parsed,
+				timedOut,
+				isCanceled: context.isCanceled,
+				killed: spawned.killed
+			});
+			duplex.destroy(returnedError);
+			throw returnedError;
+		}
+
+		duplex.destroy();
+		return {
+			command,
+			exitCode: 0,
+			stdout: undefined,
+			stderr: undefined,
+			all: undefined,
+			failed: false,
+			timedOut: false,
+			isCanceled: false,
+			killed: false
+		};
+	});
+
+	return mergePromise(duplex, handlePromise);
 };
