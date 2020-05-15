@@ -326,6 +326,7 @@ module.exports.duplexStream = (file, args, options) => {
 		}
 	});
 
+	// eslint-disable-next-line promise/prefer-await-to-then
 	const result = processDone.then(({error, exitCode, signal, timedOut}) => {
 		if (error || exitCode !== 0 || signal !== null) {
 			const returnedError = makeError({
@@ -357,6 +358,7 @@ module.exports.duplexStream = (file, args, options) => {
 		};
 	});
 
+	// eslint-disable-next-line promise/prefer-await-to-then
 	result.then(() => {
 		duplex.destroy();
 	}).catch(error => {
