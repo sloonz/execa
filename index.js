@@ -292,8 +292,8 @@ module.exports.duplexStream = (file, args, options) => {
 	crossSpawn._enoent.hookChildProcess(spawned, parsed.parsed);
 
 	const all = makeAllStream(spawned, parsed.options);
-	const stdin = spawned.stdin;
-	const output = !!all ? all : spawned.stdout;
+	const {stdin} = spawned;
+	const output = all ? all : spawned.stdout;
 
 	const duplex = new stream.Duplex({
 		write(chunk, encoding, callback) {
@@ -306,27 +306,27 @@ module.exports.duplexStream = (file, args, options) => {
 			output.resume();
 		},
 		destroy(err, cb) {
-			if(spawned.exitCode === null && spawned.signalCode === null) {
-				spawned.once("exit", () => cb());
-				spawned.once("error", () => cb());
+			if (spawned.exitCode === null && spawned.signalCode === null) {
+				spawned.once('exit', () => cb());
+				spawned.once('error', () => cb());
 				spawned.cancel();
 			} else {
 				cb();
 			}
-		},
+		}
 	});
 
-	stdin.once("error", err => duplex.destroy(err));
-	output.once("error", err => duplex.destroy(err));
-	output.once("end", () => duplex.push(null));
-	output.on("data", chunk => {
-		if(!duplex.push(chunk)) {
+	stdin.once('error', err => duplex.destroy(err));
+	output.once('error', err => duplex.destroy(err));
+	output.once('end', () => duplex.push(null));
+	output.on('data', chunk => {
+		if (!duplex.push(chunk)) {
 			output.pause();
 		}
 	});
 
 	const handlePromise = onetime(async () => {
-		const { error, exitCode, signal, timedOut } = await processDone;
+		const {error, exitCode, signal, timedOut} = await processDone;
 
 		if (error || exitCode !== 0 || signal !== null) {
 			const returnedError = makeError({
