@@ -544,6 +544,20 @@ declare const execa: {
 	): execa.ExecaChildProcess<Buffer>;
 	node(scriptPath: string, options?: execa.Options): execa.ExecaChildProcess;
 	node(scriptPath: string, options?: execa.Options<null>): execa.ExecaChildProcess<Buffer>;
+
+	/**
+	Execute a file as a transform stream
+
+	@param file - The program/script to execute.
+	@param arguments - Arguments to pass to `file` on execution.
+	@returns A [`Duplex` instance](https://nodejs.org/api/stream.html#stream_duplex_and_transform_streams), which is enhanced to also be a `Promise` for a result `Object` with `exitCode` and `signal` properties.
+	*/
+	duplexStream(
+		file: string,
+		arguments?: readonly string[],
+		options?: execa.Options<any>
+	): NodeJS.ReadWriteStream & Promise<execa.ExecaReturnValue<undefined>>;
+	duplexStream(file: string, options?: execa.Options<any>): NodeJS.ReadWriteStream & Promise<execa.ExecaReturnValue<undefined>> ;
 };
 
 export = execa;
