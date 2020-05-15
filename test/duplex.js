@@ -71,6 +71,12 @@ test('invalid arguments should result in an invalid write stream', async t => {
 	t.is(err.code, 'ERR_INVALID_ARG_TYPE');
 });
 
+test('all', async t => {
+	const collector = makeCollector();
+	await pipeline(stream.Readable.from(Buffer.alloc(0)), execa.duplexStream('noop-132', {all: true}), collector);
+	t.is(Buffer.concat(collector.chunks).toString('utf-8'), '132');
+});
+
 class MonitorMemoryUsage extends stream.Transform {
 	constructor() {
 		super();
