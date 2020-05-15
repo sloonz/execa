@@ -307,16 +307,17 @@ module.exports.duplexStream = (file, args, options) => {
 		},
 		destroy(err, cb) {
 			if (spawned.exitCode === null && spawned.signalCode === null) {
-				spawned.once('exit', () => cb());
-				spawned.once('error', () => cb());
+				spawned.once('exit', () => cb(err));
+				spawned.once('error', () => cb(err));
 				spawned.cancel();
 			} else {
-				cb();
+				cb(err);
 			}
 		}
 	});
 
 	stdin.once('error', err => duplex.destroy(err));
+
 	output.once('error', err => duplex.destroy(err));
 	output.once('end', () => duplex.push(null));
 	output.on('data', chunk => {
@@ -325,9 +326,7 @@ module.exports.duplexStream = (file, args, options) => {
 		}
 	});
 
-	const handlePromise = onetime(async () => {
-		const {error, exitCode, signal, timedOut} = await processDone;
-
+	const result = processDone.then(({error, exitCode, signal, timedOut}) => {
 		if (error || exitCode !== 0 || signal !== null) {
 			const returnedError = makeError({
 				error,
@@ -342,11 +341,9 @@ module.exports.duplexStream = (file, args, options) => {
 				isCanceled: context.isCanceled,
 				killed: spawned.killed
 			});
-			duplex.destroy(returnedError);
 			throw returnedError;
 		}
 
-		duplex.destroy();
 		return {
 			command,
 			exitCode: 0,
@@ -360,5 +357,11 @@ module.exports.duplexStream = (file, args, options) => {
 		};
 	});
 
-	return mergePromise(duplex, handlePromise);
+	result.then(() => {
+		duplex.destroy();
+	}).catch(error => {
+		duplex.destroy(error);
+	});
+
+	return mergePromise(duplex, result);
 };
