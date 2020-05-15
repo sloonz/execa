@@ -358,10 +358,7 @@ module.exports.duplexStream = (file, args, options) => {
 		};
 	});
 
-	// eslint-disable-next-line promise/prefer-await-to-then
-	result.then(() => {
-		duplex.destroy();
-	}).catch(error => {
+	result.catch(error => {
 		duplex.destroy(error);
 	});
 
