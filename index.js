@@ -275,8 +275,14 @@ module.exports.duplexStream = (file, args, options) => {
 			isCanceled: false,
 			killed: false
 		});
-		const duplex = new stream.Duplex();
-		duplex.destroy(err);
+		const duplex = new stream.Duplex({
+			read() {
+				this.destroy(err);
+			},
+			write(chunk, encoding, cb) {
+				cb(err);
+			}
+		});
 		return mergePromise(duplex, Promise.reject(err));
 	}
 

@@ -57,6 +57,20 @@ test('pipeline failure should kill the process', async t => {
 	t.is(err.signal, 'SIGTERM');
 });
 
+test('invalid arguments should result in an invalid read stream', async t => {
+	const duplex = execa.duplexStream(null);
+	duplex.catch(() => {});
+	const err = await t.throwsAsync(pipeline(duplex, makeCollector()));
+	t.is(err.code, 'ERR_INVALID_ARG_TYPE');
+});
+
+test('invalid arguments should result in an invalid write stream', async t => {
+	const duplex = execa.duplexStream(null);
+	duplex.catch(() => {});
+	const err = await t.throwsAsync(pipeline(stream.Readable.from('hello'), duplex));
+	t.is(err.code, 'ERR_INVALID_ARG_TYPE');
+});
+
 class MonitorMemoryUsage extends stream.Transform {
 	constructor() {
 		super();
