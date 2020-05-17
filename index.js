@@ -257,6 +257,7 @@ module.exports.node = (scriptPath, args, options = {}) => {
 };
 
 module.exports.duplexStream = (file, args, options) => {
+	/* eslint-disable promise/param-names, promise/prefer-await-to-then */
 	const parsed = handleArgs(file, args, options);
 	const command = joinCommand(file, args);
 
@@ -302,6 +303,7 @@ module.exports.duplexStream = (file, args, options) => {
 	const output = all ? all : spawned.stdout;
 
 	const duplex = new stream.Duplex({
+		autoDestroy: false,
 		write(chunk, encoding, callback) {
 			stdin.write(chunk, encoding, callback);
 		},
@@ -311,28 +313,30 @@ module.exports.duplexStream = (file, args, options) => {
 		read() {
 			output.resume();
 		},
-		destroy(err, cb) {
+		destroy(error, cb) {
 			if (spawned.exitCode === null && spawned.signalCode === null) {
-				spawned.once('exit', () => cb(err));
-				spawned.once('error', () => cb(err));
+				spawned.once('exit', () => cb(error));
+				spawned.once('error', () => cb(error));
 				spawned.cancel();
 			} else {
-				cb(err);
+				cb(error);
 			}
 		}
 	});
 
-	stdin.once('error', err => duplex.destroy(err));
+	stdin.once('error', error => duplex.destroy(error));
 
-	output.once('error', err => duplex.destroy(err));
-	output.once('end', () => duplex.push(null));
+	output.once('error', error => duplex.destroy(error));
+	output.once('end', async () => {
+		await processDone;
+		duplex.push(null);
+	});
 	output.on('data', chunk => {
 		if (!duplex.push(chunk)) {
 			output.pause();
 		}
 	});
 
-	// eslint-disable-next-line promise/prefer-await-to-then
 	const result = processDone.then(({error, exitCode, signal, timedOut}) => {
 		if (error || exitCode !== 0 || signal !== null) {
 			const returnedError = makeError({
@@ -368,5 +372,14 @@ module.exports.duplexStream = (file, args, options) => {
 		duplex.destroy(error);
 	});
 
+	Promise.all([
+		new Promise((resolve, _) => stdin.on('close', resolve)),
+		new Promise((resolve, _) => output.on('close', resolve)),
+		processDone
+	]).then(() => {
+		duplex.destroy();
+	});
+
 	return mergePromise(duplex, result);
+	/* eslint-enable promise/param-names, promise/prefer-await-to-then */
 };
