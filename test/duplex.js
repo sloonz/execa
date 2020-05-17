@@ -40,8 +40,8 @@ test('simple pipeline', async t => {
 
 test('command failure should result in pipeline failure', async t => {
 	const duplex = execa.duplexStream('fail');
-	const err = await t.throwsAsync(pipeline(makeEmptyReadableStream(), duplex, makeCollector()));
-	t.is(err.exitCode, 2);
+	const error = await t.throwsAsync(pipeline(makeEmptyReadableStream(), duplex, makeCollector()));
+	t.is(error.exitCode, 2);
 });
 
 test('pipeline failure should kill the process', async t => {
@@ -50,25 +50,25 @@ test('pipeline failure should kill the process', async t => {
 	failingStream.destroy(new Error('oops'));
 	const {message} = await t.throwsAsync(pipeline(failingStream, duplex, makeCollector()));
 	t.is(message, 'oops');
-	const err = await t.throwsAsync(duplex);
-	t.is(err.isCanceled, true);
-	t.is(err.killed, true);
-	t.is(err.failed, true);
-	t.is(err.signal, 'SIGTERM');
+	const error = await t.throwsAsync(duplex);
+	t.is(error.isCanceled, true);
+	t.is(error.killed, true);
+	t.is(error.failed, true);
+	t.is(error.signal, 'SIGTERM');
 });
 
 test('invalid arguments should result in an invalid read stream', async t => {
 	const duplex = execa.duplexStream(null);
 	duplex.catch(() => {});
-	const err = await t.throwsAsync(pipeline(duplex, makeCollector()));
-	t.is(err.code, 'ERR_INVALID_ARG_TYPE');
+	const error = await t.throwsAsync(pipeline(duplex, makeCollector()));
+	t.is(error.code, 'ERR_INVALID_ARG_TYPE');
 });
 
 test('invalid arguments should result in an invalid write stream', async t => {
 	const duplex = execa.duplexStream(null);
 	duplex.catch(() => {});
-	const err = await t.throwsAsync(pipeline(stream.Readable.from('hello'), duplex));
-	t.is(err.code, 'ERR_INVALID_ARG_TYPE');
+	const error = await t.throwsAsync(pipeline(stream.Readable.from('hello'), duplex));
+	t.is(error.code, 'ERR_INVALID_ARG_TYPE');
 });
 
 test('all', async t => {
