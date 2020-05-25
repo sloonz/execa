@@ -58,17 +58,17 @@ test('pipeline failure should kill the process', async t => {
 });
 
 test('invalid arguments should result in an invalid read stream', async t => {
-	const duplex = execa.duplexStream(null);
+	const duplex = execa.duplexStream('noop', {uid: -1});
 	duplex.catch(() => {});
 	const error = await t.throwsAsync(pipeline(duplex, makeCollector()));
-	t.is(error.code, 'ERR_INVALID_ARG_TYPE');
+	t.is(error.code, 'EINVAL');
 });
 
 test('invalid arguments should result in an invalid write stream', async t => {
-	const duplex = execa.duplexStream(null);
+	const duplex = execa.duplexStream('noop', {uid: -1});
 	duplex.catch(() => {});
 	const error = await t.throwsAsync(pipeline(stream.Readable.from('hello'), duplex));
-	t.is(error.code, 'ERR_INVALID_ARG_TYPE');
+	t.is(error.code, 'EINVAL');
 });
 
 test('all', async t => {
