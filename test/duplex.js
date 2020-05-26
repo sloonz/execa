@@ -10,16 +10,17 @@ const pipeline = promisify(stream.pipeline);
 process.env.PATH = path.join(__dirname, 'fixtures') + path.delimiter + process.env.PATH;
 
 function makeCollector() {
+	const chunks = [];
 	const w = new stream.Writable({
 		write(chunk, encoding, cb) {
-			w.chunks.push(chunk);
+			chunks.push(chunk);
 			cb();
 		},
 		final(cb) {
 			cb();
 		}
 	});
-	w.chunks = [];
+	w.collect = () => Buffer.concat(chunks).toString('utf-8');
 	return w;
 }
 
@@ -33,7 +34,7 @@ test('simple pipeline', async t => {
 	const duplex = execa.duplexStream('stdin');
 	const collector = makeCollector();
 	t.is(await pipeline(stream.Readable.from('hello, world'), duplex, collector), undefined);
-	t.is(Buffer.concat(collector.chunks).toString('utf-8'), 'hello, world');
+	t.is(collector.collect(), 'hello, world');
 	const res = await duplex;
 	t.is(res.exitCode, 0);
 });
@@ -59,22 +60,34 @@ test('pipeline failure should kill the process', async t => {
 
 test('invalid arguments should result in an invalid read stream', async t => {
 	const duplex = execa.duplexStream('noop', {uid: -1});
-	duplex.catch(() => {});
-	const error = await t.throwsAsync(pipeline(duplex, makeCollector()));
-	t.is(error.code, 'EINVAL');
+	const {failed} = await t.throwsAsync(pipeline(duplex, makeCollector()));
+	t.true(failed);
 });
 
 test('invalid arguments should result in an invalid write stream', async t => {
 	const duplex = execa.duplexStream('noop', {uid: -1});
-	duplex.catch(() => {});
-	const error = await t.throwsAsync(pipeline(stream.Readable.from('hello'), duplex));
-	t.is(error.code, 'EINVAL');
+	const {failed} = await t.throwsAsync(pipeline(stream.Readable.from('hello'), duplex));
+	t.true(failed);
 });
 
 test('all', async t => {
 	const collector = makeCollector();
 	await pipeline(stream.Readable.from(Buffer.alloc(0)), execa.duplexStream('noop-132', {all: true}), collector);
-	t.is(Buffer.concat(collector.chunks).toString('utf-8'), '132');
+	t.is(collector.collect(), '132');
+});
+
+test('we should get all output even with non-zero exit code', async t => {
+	const collector = makeCollector();
+	const {failed} = await t.throwsAsync(pipeline(execa.duplexStream('echo-fail'), collector));
+	t.true(failed);
+	t.is(collector.collect(), 'stdout\n');
+});
+
+test('timeout', async t => {
+	const collector = makeCollector();
+	const {failed, timedOut} = await t.throwsAsync(pipeline(execa.duplexStream('noop', {timeout: 1}), collector));
+	t.is(timedOut, true);
+	t.is(failed, true);
 });
 
 class MonitorMemoryUsage extends stream.Transform {
@@ -132,13 +145,13 @@ test('using duplexStream should not use large amount of memory', async t => {
 	// Generate 256 MiB worth of zeroes
 	// dd if=/dev/zero of=/dev/stdout bs=$((1024*1024)) count=256 | sha256sum => a6d72ac7690f53be6ae46ba88506bd97302a093f7108472bd9efc3cefda06484
 
-	const counter = new Zeroes(256 * 1024 * 1024);
+	const counter = new Zeroes(64 * 1024 * 1024);
 	const dgst = new Digest();
 	const mem = new MonitorMemoryUsage();
 	const {heapUsed} = process.memoryUsage();
 
 	await pipeline(counter, execa.duplexStream('stdin'), mem, dgst);
 
-	t.is(dgst.hash.digest('hex'), 'a6d72ac7690f53be6ae46ba88506bd97302a093f7108472bd9efc3cefda06484');
+	t.is(dgst.hash.digest('hex'), '3b6a07d0d404fab4e23b6d34bc6696a6a312dd92821332385e5af7c01c421351');
 	t.assert((mem.maxHeap - heapUsed) / (1024 * 1024) < 10); // Allow 10 MiB
 });

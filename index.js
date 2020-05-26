@@ -265,7 +265,7 @@ module.exports.duplexStream = (file, args, options) => {
 	try {
 		spawned = childProcess.spawn(parsed.file, parsed.args, parsed.options);
 	} catch (error) {
-		const err = makeError({
+		const errorPromise = Promise.reject(makeError({
 			error,
 			stdout: undefined,
 			stderr: undefined,
@@ -275,21 +275,27 @@ module.exports.duplexStream = (file, args, options) => {
 			timedOut: false,
 			isCanceled: false,
 			killed: false
-		});
-		const duplex = new stream.Duplex({
+		}));
+
+		// We don't require the caller to handle the rejection since errors
+		// will be translated into pipe/pipeline failure
+		errorPromise.catch(() => {});
+
+		const dummyDuplex = new stream.Duplex({
 			read() {
-				this.destroy(err);
+				this.destroy(error);
 			},
 			write(chunk, encoding, cb) {
-				cb(err);
+				cb(error);
 			}
 		});
-		return mergePromise(duplex, Promise.reject(err));
+		return mergePromise(dummyDuplex, errorPromise);
 	}
 
 	const spawnedPromise = getSpawnedPromise(spawned);
 	const timedPromise = setupTimeout(spawned, parsed.options, spawnedPromise);
-	const processDone = setExitHandler(spawned, parsed.options, timedPromise);
+	const processDone = setExitHandler(spawned, parsed.options, timedPromise)
+		.catch(error => ({error, signal: error.signal, timedOut: error.timedOut}));
 
 	const context = {isCanceled: false};
 
@@ -328,8 +334,10 @@ module.exports.duplexStream = (file, args, options) => {
 
 	output.once('error', error => duplex.destroy(error));
 	output.once('end', async () => {
-		await processDone;
-		duplex.push(null);
+		const {error, exitCode, signal} = await processDone;
+		if (!error && exitCode === 0 && signal === null) {
+			duplex.push(null);
+		}
 	});
 	output.on('data', chunk => {
 		if (!duplex.push(chunk)) {
@@ -368,16 +376,12 @@ module.exports.duplexStream = (file, args, options) => {
 		};
 	});
 
-	result.catch(error => {
-		duplex.destroy(error);
-	});
-
 	Promise.all([
+		result.then(() => {}).catch(error => error),
 		new Promise((resolve, _) => stdin.on('close', resolve)),
-		new Promise((resolve, _) => output.on('close', resolve)),
-		processDone
-	]).then(() => {
-		duplex.destroy();
+		new Promise((resolve, _) => output.on('close', resolve))
+	]).then(([error]) => {
+		duplex.destroy(error);
 	});
 
 	return mergePromise(duplex, result);
