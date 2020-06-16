@@ -257,7 +257,6 @@ module.exports.node = (scriptPath, args, options = {}) => {
 };
 
 module.exports.duplexStream = (file, args, options) => {
-	/* eslint-disable promise/param-names, promise/prefer-await-to-then */
 	const parsed = handleArgs(file, args, options);
 	const command = joinCommand(file, args);
 
@@ -295,8 +294,13 @@ module.exports.duplexStream = (file, args, options) => {
 
 	const spawnedPromise = getSpawnedPromise(spawned);
 	const timedPromise = setupTimeout(spawned, parsed.options, spawnedPromise);
-	const processDone = setExitHandler(spawned, parsed.options, timedPromise)
-		.catch(error => ({error, signal: error.signal, timedOut: error.timedOut}));
+	const processDone = (async () => {
+		try {
+			return await setExitHandler(spawned, parsed.options, timedPromise);
+		} catch (error) {
+			return {error, signal: error.signal, timedOut: error.timedOut};
+		}
+	})();
 
 	const context = {isCanceled: false};
 
@@ -357,7 +361,8 @@ module.exports.duplexStream = (file, args, options) => {
 		}
 	});
 
-	const result = processDone.then(({error, exitCode, signal, timedOut}) => {
+	const result = (async () => {
+		const {error, exitCode, signal, timedOut} = await processDone;
 		if (error || exitCode !== 0 || signal !== null) {
 			const returnedError = makeError({
 				error,
@@ -387,20 +392,29 @@ module.exports.duplexStream = (file, args, options) => {
 			isCanceled: false,
 			killed: false
 		};
-	});
+	})();
 
-	Promise.all([
-		result.then(() => {}).catch(error => error),
-		new Promise((resolve, _) => {
-			stdin.on('close', resolve);
-		}),
-		new Promise((resolve, _) => {
-			output.on('close', resolve);
-		})
-	]).then(([error]) => {
-		duplex.destroy(error);
-	});
+	(async () => {
+		const promisesResult = (await Promise.all([
+			(async () => {
+				try {
+					await result;
+					return null;
+				} catch (error) {
+					return error;
+				}
+			})(),
+			new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars
+				stdin.on('close', resolve);
+			}),
+			new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars
+				output.on('close', resolve);
+			})
+		]));
+		if (promisesResult[0] !== null) {
+			duplex.destroy(promisesResult[0]);
+		}
+	})();
 
 	return mergePromise(duplex, result);
-	/* eslint-enable promise/param-names, promise/prefer-await-to-then */
 };
