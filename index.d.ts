@@ -546,7 +546,7 @@ declare const execa: {
 	node(scriptPath: string, options?: execa.Options<null>): execa.ExecaChildProcess<Buffer>;
 
 	/**
-	Execute a file as a transform stream
+	Execute a file as a duplex stream: the write end of the stream will be connected to the spawned process stdin, and the read end to stdout (or to `all` if the `all` option is `true`).
 
 	@param file - The program/script to execute.
 	@param arguments - Arguments to pass to `file` on execution.

@@ -11,17 +11,17 @@ process.env.PATH = path.join(__dirname, 'fixtures') + path.delimiter + process.e
 
 function makeCollector() {
 	const chunks = [];
-	const w = new stream.Writable({
-		write(chunk, encoding, cb) {
+	const writableStream = new stream.Writable({
+		write(chunk, encoding, callback) {
 			chunks.push(chunk);
-			cb();
+			callback();
 		},
-		final(cb) {
-			cb();
+		final(callback) {
+			callback();
 		}
 	});
-	w.collect = () => Buffer.concat(chunks).toString('utf-8');
-	return w;
+	writableStream.collect = () => Buffer.concat(chunks).toString('utf-8');
+	return writableStream;
 }
 
 function makeEmptyReadableStream() {
@@ -96,7 +96,7 @@ class MonitorMemoryUsage extends stream.Transform {
 		this.maxHeap = 0;
 	}
 
-	_transform(chunk, encoding, cb) {
+	_transform(chunk, encoding, callback) {
 		this.push(chunk);
 
 		const {heapUsed} = process.memoryUsage();
@@ -105,7 +105,7 @@ class MonitorMemoryUsage extends stream.Transform {
 		}
 
 		// Simulate slow reader
-		setTimeout(() => cb(null), 1);
+		setTimeout(() => callback(null), 1);
 	}
 }
 
@@ -135,9 +135,9 @@ class Digest extends stream.Writable {
 		this.hash = crypto.createHash('sha256');
 	}
 
-	_write(chunk, encoding, cb) {
+	_write(chunk, encoding, callback) {
 		this.hash.update(chunk);
-		cb(null);
+		callback(null);
 	}
 }
 
