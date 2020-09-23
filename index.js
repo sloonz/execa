@@ -264,7 +264,7 @@ module.exports.duplexStream = (file, args, options) => {
 	try {
 		spawned = childProcess.spawn(parsed.file, parsed.args, parsed.options);
 	} catch (error) {
-		const errorPromise = Promise.reject(makeError({
+		const fullError = makeError({
 			error,
 			stdout: undefined,
 			stderr: undefined,
@@ -274,22 +274,17 @@ module.exports.duplexStream = (file, args, options) => {
 			timedOut: false,
 			isCanceled: false,
 			killed: false
-		}));
-
-		// We don't require the caller to handle the rejection since errors
-		// will be translated into pipe/pipeline failure
-		errorPromise.catch(() => {});
-
-		const dummyDuplex = new stream.Duplex({
-			read() {
-				this.destroy(error);
-			},
-			write(chunk, encoding, callback) {
-				callback(error);
-			}
 		});
 
-		return mergePromise(dummyDuplex, errorPromise);
+		// Dummy duplex that immediatly returns an error
+		return new stream.Duplex({
+			read() {
+				this.destroy(fullError);
+			},
+			write(chunk, encoding, callback) {
+				callback(fullError);
+			}
+		});
 	}
 
 	const spawnedPromise = getSpawnedPromise(spawned);
@@ -355,16 +350,25 @@ module.exports.duplexStream = (file, args, options) => {
 			duplex.push(null);
 		}
 	});
+
 	output.on('data', chunk => {
 		if (!duplex.push(chunk)) {
 			output.pause();
 		}
 	});
 
-	const result = (async () => {
+	const stdinClosePromise = new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars
+		stdin.once('close', resolve);
+	});
+
+	const outputClosePromise = new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars
+		output.once('close', resolve);
+	});
+
+	(async () => {
 		const {error, exitCode, signal, timedOut} = await processDone;
 		if (error || exitCode !== 0 || signal !== null) {
-			const returnedError = makeError({
+			duplex.destroy(makeError({
 				error,
 				exitCode,
 				signal,
@@ -376,45 +380,12 @@ module.exports.duplexStream = (file, args, options) => {
 				timedOut,
 				isCanceled: context.isCanceled,
 				killed: spawned.killed
-			});
-
-			throw returnedError;
-		}
-
-		return {
-			command,
-			exitCode: 0,
-			stdout: undefined,
-			stderr: undefined,
-			all: undefined,
-			failed: false,
-			timedOut: false,
-			isCanceled: false,
-			killed: false
-		};
-	})();
-
-	(async () => {
-		const promisesResult = (await Promise.all([
-			(async () => {
-				try {
-					await result;
-					return null;
-				} catch (error) {
-					return error;
-				}
-			})(),
-			new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars
-				stdin.on('close', resolve);
-			}),
-			new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars
-				output.on('close', resolve);
-			})
-		]));
-		if (promisesResult[0] !== null) {
-			duplex.destroy(promisesResult[0]);
+			}));
+		} else {
+			await Promise.all([stdinClosePromise, outputClosePromise]);
+			duplex.destroy(null);
 		}
 	})();
 
-	return mergePromise(duplex, result);
+	return duplex;
 };

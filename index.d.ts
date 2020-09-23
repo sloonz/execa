@@ -550,14 +550,14 @@ declare const execa: {
 
 	@param file - The program/script to execute.
 	@param arguments - Arguments to pass to `file` on execution.
-	@returns A [`Duplex` instance](https://nodejs.org/api/stream.html#stream_duplex_and_transform_streams), which is enhanced to also be a `Promise` for a result `Object` with `exitCode` and `signal` properties.
+	@returns A [`Duplex` instance](https://nodejs.org/api/stream.html#stream_duplex_and_transform_streams).
 	*/
 	duplexStream(
 		file: string,
 		arguments?: readonly string[],
 		options?: execa.Options<any>
-	): NodeJS.ReadWriteStream & Promise<execa.ExecaReturnValue<undefined>>;
-	duplexStream(file: string, options?: execa.Options<any>): NodeJS.ReadWriteStream & Promise<execa.ExecaReturnValue<undefined>> ;
+	): NodeJS.ReadWriteStream;
+	duplexStream(file: string, options?: execa.Options<any>): NodeJS.ReadWriteStream;
 };
 
 export = execa;
